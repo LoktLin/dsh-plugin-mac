@@ -1,0 +1,16 @@
+# 插件源码（含 dsh-lanhu / dsh-eggy 两个独立仓库，且 32MB）——各自有仓库，不随技能发布
+参考-源码/*
+!参考-源码/README.md
+
+# 技能评测用例（含内部开发路径与服务器别名）
+evals/
+
+# 依赖与构建产物
+node_modules/
+
+# macOS / 编辑器
+.DS_Store
+*.log
+
+# 本地临时
+*.bak
