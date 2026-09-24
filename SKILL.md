@@ -50,10 +50,11 @@ DSH 里「扩展」有好几种形态，选错会白干：
 ~/.dsh/skills/dsh-plugin-mac/
 ├── SKILL.md
 ├── references/            # 契约与坑
-├── scripts/               # 脚手架 / 自检 / 探针 / 技能自测
+├── scripts/               # 脚手架 / 自检 / 探针 / 技能自测 / 令牌核对
 └── 参考-源码/              # ← 插件源码都在这儿
     ├── dsh-eggy/          # 只读参照（未安装、跑不起来）
-    ├── dsh-lanhu/         # 蓝湖设计稿读取（双面插件：10 工具 + 三 Tab 面板）
+    ├── dsh-lanhu/         # 蓝湖读取（双面插件：15 工具 + 三 Tab 面板 + CLI）
+    ├── lanhu-mcp/         # 第三方参照（**MIT**，只读；登记见 参考-源码/README.md）
     └── <新插件>/           # 以后新写的都放这一层
 ```
 
@@ -69,6 +70,7 @@ DSH 里「扩展」有好几种形态，选错会白干：
 - 官方包地图与社区插件 → `references/ecosystem.md`
 - **DSH 本体升级后**的契约兼容工作流（探针 → 定级 → 兼容决策 → 复验+更新基线）→ `references/core-update.md`
 - 我们依赖的官方 API 清单（谁在用、失效后果、怎么 feature-detect）→ `references/used-apis.md`
+- **面板/浮层的颜色怎么取**（令牌名要核不要猜、取值要现抠不要抄、`--scan` 当场扫出错名）→ `references/theme-tokens.md`
 
 ## 2. 五步流程
 

@@ -225,11 +225,17 @@ node ~/.dsh/skills/dsh-plugin-mac/scripts/test-skill.mjs --json   # 机器可读
 
 | 项 | 值 |
 |---|---|
-| dsh / cordis | `0.1.5-rc.2` / `4.0.2`（macOS 本机实测） |
-| 官方包数量 | 240 |
-| 槽位总数 | **61**（来自 15 个文件） |
+| dsh / cordis | `0.1.7-rc.1` / `4.0.4`（macOS 本机实测，2026-09-24） |
+| 官方包数量 | 277 |
+| 槽位总数 | **86**（来自 19 个文件） |
 | 关键槽位 | `sidebar.footer.action`(list) · `shell.overlay`(list) · `root`(single, **禁注册**) |
-| profile | `bundles` 9 项 · `patchReload` 未显式声明（→ 官方默认 `live`） |
+| profile | `bundles` 11 项 · `patchReload` 未显式声明（→ 官方默认 `live`） |
 | 基线文件 | `~/.dsh/dsh-contract-baseline.json` |
 
 （这些值会随版本变——**探针每次都会重新取**，这张表只是让你一眼看出"是不是变了"。）
+
+**本体升级后怎么更新这张表**（别手抄，照做即可）：
+1. `node scripts/probe-contracts.mjs` → 看「与基线对比」段落，确认**没有需要处理的**（A 类新增可以不管，C 类移除才致命）；
+2. `node scripts/probe-contracts.mjs --save-baseline` → 存新基线（**非全绿时它会拒绝**，这是有意的）；
+3. 从探针输出里抄这几项：dsh/cordis 版本、`槽位目录` 的「共 N 个（来自 M 个文件）」、官方包数量、bundles 项数；
+4. `node scripts/test-skill.mjs` → 回到全绿（T1.8 幂等 / T3.3 文档数值这两条就是守这张表的）。
