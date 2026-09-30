@@ -7,7 +7,7 @@
 > node ~/.dsh/skills/dsh-plugin-mac/scripts/probe-contracts.mjs --scan \
 >   <你的插件目录> <skill-dir>
 > ```
-> 版本锚点：`dsh 0.1.7-rc.1` / `cordis 4.0.4` @ 2026-09-24（**本机当前即此版本**；换机器或本体升级后按 §8 流程复核）。
+> 版本锚点：`dsh 0.2.0-rc.2` / `cordis 4.0.4` @ 2026-09-30（**本机当前即此版本**；换机器或本体升级后按 §8 流程复核）。
 
 ## 一、总表
 

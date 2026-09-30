@@ -72,7 +72,7 @@ node scripts/dump-theme-tokens.mjs --scan <插件目录>
 
 ## 三、取值快照（**会漂移，别照抄**）
 
-> ⚠️ 下面的值是 **2026-09-24 / DSH `0.1.7-rc.1`** 抠出来的快照，共 **178 个令牌**（浅 178 / 深 178）。
+> ⚠️ 下面的值是 **2026-09-30 / DSH `0.2.0-rc.2`** 抠出来的快照，共 **190 个令牌**（浅 190 / 深 190）。
 > **它一定会过期** —— 见第四节。要数值就跑 `node scripts/dump-theme-tokens.mjs`，**不要抄本文档**。
 
 | 令牌 | 浅色 | 深色 | 用途 |
@@ -103,7 +103,7 @@ node scripts/dump-theme-tokens.mjs --scan <插件目录>
 | `--dsw-alias-state-business-primary` | `#4176e6` | `#7aaaff` | 业务蓝 |
 | `--dsw-alias-scrollbar-bg-l1` | `#e5e5e5` | `#3c3c3d` | 滚动条 |
 | `--dsw-alias-scrollbar-hover-l1` | `#d4d4d4` | `#545557` | 滚动条 hover |
-| `--dsw-specific-menu` | `#f8f9fa94` | `#30313680` | 菜单/浮层（**带 alpha**） |
+| `--dsw-specific-menu` | `#f8f9faf0` | `#303136f0` | 菜单/浮层（**带 alpha**） |
 | `--dsw-specific-sidebar-fill` | `#f9fafb` | `#1b1b1c` | 侧栏底 |
 
 边框那几行的值是 **8 位十六进制 = 带 alpha**（`#0000001a` = 黑 10%），不是拼错的颜色。
@@ -113,7 +113,12 @@ node scripts/dump-theme-tokens.mjs --scan <插件目录>
 ## 四、它会漂移（本次会话里就撞到一次）
 
 同一次会话内，`--dsw-specific-menu` 从 `#fff` / `#353638` 变成了 `#f8f9fa94` / `#30313680`，
-令牌总数从 **163 变成 178** —— 原因是主题包被更新了（`client.js` 的 mtime 直接跳到当天）。
+令牌总数从 **163 变成 178**（0.1.5-rc.2 → 0.1.7-rc.1），再到 **190**（0.1.7-rc.2 → **0.2.0-rc.2**，
+加 12 个）—— 原因是主题包被更新了（`client.js` 的 mtime 直接跳到当天）。
+
+**0.2.0-rc.2 上还有一处"同名不同值"**：`--dsw-specific-menu` 的透明度从 `94/80`（58%/50%）变成
+**`f0/f0`（94%）**。这个令牌**我们的面板正在用**（浮层底色 `surface`）——因为我们写的是
+`var(--dsw-specific-menu, …)` **活引用**，所以自动跟随，**不用改代码**；但如果你把值抄成了字面量，就会对不上。
 
 **所以**：
 

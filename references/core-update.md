@@ -4,7 +4,7 @@
 > 入口在 SKILL.md §8；「我们依赖的官方 API 清单」另见 `references/used-apis.md`。
 > 文内提到的探针/自测脚本都在本技能的 `scripts/` 下。
 
-DSH 在快速演进（本机当前 `dsh 0.1.7-rc.1` / `cordis 4.0.4`）。**它一升级，我们所有插件依赖的官方 API 都可能变**——
+DSH 在快速演进（本机当前 `dsh 0.2.0-rc.2` / `cordis 4.0.4`）。**它一升级，我们所有插件依赖的官方 API 都可能变**——
 改名、改签名、改语义、或者直接没有。而**大部分失效是静默的**：
 
 | 变化 | 表面现象 | 为什么难发现 |
@@ -225,9 +225,9 @@ node ~/.dsh/skills/dsh-plugin-mac/scripts/test-skill.mjs --json   # 机器可读
 
 | 项 | 值 |
 |---|---|
-| dsh / cordis | `0.1.7-rc.1` / `4.0.4`（macOS 本机实测，2026-09-24） |
-| 官方包数量 | 277 |
-| 槽位总数 | **86**（来自 19 个文件） |
+| dsh / cordis | `0.2.0-rc.2` / `4.0.4`（macOS 本机实测，2026-09-30） |
+| 官方包数量 | 288 |
+| 槽位总数 | **90**（来自 20 个文件） |
 | 关键槽位 | `sidebar.footer.action`(list) · `shell.overlay`(list) · `root`(single, **禁注册**) |
 | profile | `bundles` 11 项 · `patchReload` 未显式声明（→ 官方默认 `live`） |
 | 基线文件 | `~/.dsh/dsh-contract-baseline.json` |
