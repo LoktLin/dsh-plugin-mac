@@ -17,8 +17,19 @@
  * 它浅色下是近黑 `#0f1115`、深色下是近白 `#f9fafb`（是个**对比色**）。
  * 拿它当紫底、再配写死的白字 → 深色下**白底白字**，实测对比度 1.05:1，主按钮整块看不见。
  *
- * 唯一真源：`@deepseek-ai/dsh-client-ui-theme/lib/client.js` 里的 `design_platform_css_default`
- * —— 它同时含 `body{…}`（浅色）与 `body[data-ds-dark-theme]{…}`（深色）两套。
+ * 唯一真源：`@deepseek-ai/dsh-client-ui-theme/lib/client.js` 里的 **全部 CSS 常量表**
+ * （实测 8 张，`design_platform_css_default` 只是其中一张 —— 见 `loadTokens().tables`）。
+ *
+ * ⚠️ 2026-10-10 修掉一个**会误导插件作业**的 bug：第一版只解析 `design_platform_css_default` 的
+ * `body{}` / `body[data-ds-dark-theme]{}` 两块 → 只认识 190 个令牌，**漏 213 个**：
+ *   · `--dsw-elevation-*`（投影/高度）在 `gradient_shadow_text_css_default` 的 **`body,body *{}`** 块里
+ *   · `--dsw-shadow-lv*` 在同一张表的另一个 `body{}` 块里
+ *   · `--dsw-font-*` / `--dsw-radius-*` 在 `base_css_default` 的 `:root{}` 里
+ *   · `--dsw-focus-ring-*` 在 `focus_css_default` 里
+ * 后果：`--scan` 把**真实存在**的令牌报成「❌ 不存在 → 永远走 fallback」并 exit 1 ——
+ * 谁把它当门禁，就会把**正确的令牌化写法**退回**写死色值**这个错误写法。
+ * 现在：并集 = 403（独立 grep 真源的定义点去重也是 403），且**反向**保持严格 ——
+ * 不存在的名字仍然必须报 ❌，**绝不改成"什么都认"**（那比漏报更糟）。
  *
  * 退出码：--scan 时若有"不存在的令牌" → 1（可直接当门禁用）；其余 0。
  */
@@ -84,32 +95,83 @@ function unescapeJsString(raw) {
     .replace(/\\"/g, '"').replace(/\\\\/g, '\\');
 }
 
-/** 返回 { light, dark, source } —— 两个 map：令牌名 → 值。 */
+/** 源码里所有"长成 CSS 的字符串常量"（`var X = "…";`）—— **不是**只看 design_platform 那一张。 */
+export function cssStringConstants(src) {
+  const out = [];
+  for (const m of src.matchAll(/var\s+([A-Za-z0-9_$]+)\s*=\s*"((?:[^"\\]|\\.)*)"/g)) {
+    const css = unescapeJsString(m[2]);
+    if (!/\{[\s\S]*\}/.test(css)) continue; // 不是 CSS（例如普通的类名字符串）
+    out.push({ name: m[1], css });
+  }
+  return out;
+}
+
+/** 选择器是不是"根级/body 级"（值对该主题**全局**生效）。`body *` 这类后代选择器不算（只算条件定义）。 */
+const GLOBAL_SELECTOR = /^(?:html\[[^\]]*\]\s+)?body(?:\[[^\]]*\])?$|^:root$/;
+
+/** 把一张 CSS 表拆成 [{ selector, body }]，只保留**定义了 --dsw- 令牌**的块。 */
+function tokenBlocks(css) {
+  const out = [];
+  for (const m of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    if (!/--dsw-[a-z0-9-]+\s*:/.test(m[2])) continue;
+    out.push({ selector: m[1].trim(), body: m[2] });
+  }
+  return out;
+}
+
+/**
+ * 返回 `{ light, dark, all, scoped, tables, cssConstants, source }`
+ *   · `light` / `dark` —— 令牌名 → 值（**单值** `var()` 链由 resolveToken 解析）
+ *   · `all`   —— **全部**已知令牌名（各表并集，`--scan` 的判据就是它）
+ *   · `scoped`—— 只在条件选择器里定义、没有全局值的令牌（如 `:focus-visible` 下的 `--dsw-focus-ring-color`）
+ */
 export function loadTokens(themeFile = findThemeFile()) {
   if (!themeFile) throw new Error('找不到主题包（dsh-client-ui-theme）。确认本机装了 @deepseek-ai/dsh。');
   const src = fs.readFileSync(themeFile, 'utf8');
-  const m = src.match(/var design_platform_css_default\s*=\s*"([\s\S]*?)";\s*\n/);
-  if (!m) throw new Error('主题包里没有 design_platform_css_default —— 官方内部结构可能变了，请重新取证。');
-  const css = unescapeJsString(m[1]);
-  const pick = (selector) => {
-    const out = {};
-    // 同一选择器可能出现多次（静态色板一段、alias 一段），全部合并
-    const re = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([\\s\\S]*?)\\}', 'g');
-    for (const block of css.matchAll(re)) {
-      for (const kv of block[1].matchAll(/(--dsw-[a-z0-9-]+)\s*:\s*([^;}]+)/g)) out[kv[1]] = kv[2].trim();
+  const consts = cssStringConstants(src);
+  if (!consts.length) throw new Error('主题包里没有任何 CSS 字符串常量 —— 官方内部结构可能变了，请重新取证。');
+
+  const light = {};
+  const dark = {};
+  const scoped = [];
+  const all = new Set();
+  const tables = [];
+  for (const t of consts) {
+    let defs = 0;
+    for (const b of tokenBlocks(t.css)) {
+      const isDark = /data-ds-dark-theme/.test(b.selector);
+      const isGlobal = b.selector.split(',').some((s) => GLOBAL_SELECTOR.test(s.trim()));
+      for (const d of b.body.matchAll(/(--dsw-[a-z0-9-]+)\s*:\s*([^;}]*)/g)) {
+        defs += 1;
+        all.add(d[1]);
+        if (isGlobal) (isDark ? dark : light)[d[1]] = d[2].trim();
+        else scoped.push({ name: d[1], value: d[2].trim(), dark: isDark, table: t.name, selector: b.selector });
+      }
     }
-    return out;
+    if (defs) tables.push({ name: t.name, definitions: defs });
+  }
+  if (!tables.length) throw new Error('CSS 常量里没有任何 --dsw- 令牌定义 —— 官方内部结构可能变了，请重新取证。');
+
+  return {
+    light, dark, scoped, tables,
+    all: [...all].sort(),
+    cssConstants: consts.map((c) => c.name),
+    source: themeFile,
   };
-  return { light: pick('body'), dark: pick('body[data-ds-dark-theme]'), source: themeFile };
 }
 
-/** 把 `var(--x, var(--y, #fff))` 一路解析到具体值（能解就解，解不出就返回链尾 fallback）。 */
+/** 把 `var(--x)` / `var(--x, #fff)` 这种**整值就是一次引用**的一路解析到具体值。 */
+/* ⚠️ 只认"整值就是一次引用"：`var(--a), 0 3px 8px …` 这种**复合值必须原样保留** ——
+ *    旧实现用 `^var\((--dsw-…)` 去匹配，会把 `--dsw-elevation-panel` 解析成只有第一段
+ *    `0 0 0 .5px var(--dsw-elevation-stroke-color)`，**投影被吃掉一半**还看不出来。 */
+const PURE_VAR_REF = /^var\(\s*(--dsw-[a-z0-9-]+)\s*(?:,\s*[^()]*)?\)$/;
+
 export function resolveToken(tokens, name) {
   for (const theme of ['light', 'dark']) {
     let cur = tokens[theme][name];
     if (cur === undefined) continue;
     for (let i = 0; i < 10; i += 1) {
-      const m = String(cur).match(/^var\(\s*(--dsw-[a-z0-9-]+)/);
+      const m = String(cur).match(PURE_VAR_REF);
       if (!m) break;
       const next = tokens[theme][m[1]];
       if (next === undefined) break;
@@ -136,9 +198,14 @@ function walk(dir, out = []) {
   return out;
 }
 
-/** 扫描目录 → [{ file, tokens:Set }]，并标出两个库里都不存在的令牌。 */
+/** 全部已知令牌（各表并集）—— `--scan` 的唯一判据。 */
+export function knownTokens(tokens) {
+  return new Set(tokens.all ?? [...Object.keys(tokens.light ?? {}), ...Object.keys(tokens.dark ?? {})]);
+}
+
+/** 扫描目录 → [{ file, tokens:Set }]，并标出**任何一张表里都没有**的令牌。 */
 export function scanDir(dir, tokens) {
-  const known = new Set([...Object.keys(tokens.light), ...Object.keys(tokens.dark)]);
+  const known = knownTokens(tokens);
   const perFile = [];
   for (const f of walk(dir)) {
     let text = '';
@@ -184,13 +251,25 @@ if (isMain) {
     process.exit(2);
   }
   for (const t of Object.keys(tokens.light)) resolveToken(tokens, t);
+  for (const t of Object.keys(tokens.dark)) resolveToken(tokens, t);
+
+  /** 统一的一行小结：**并集**才是"已知令牌"，别只看浅色。 */
+  const summary = () => {
+    const scopedOnly = tokens.all.filter((t) => tokens.light[t] === undefined && tokens.dark[t] === undefined);
+    return `真实令牌（全部常量表并集）：**${tokens.all.length} 个** ｜ 浅色全局 ${Object.keys(tokens.light).length}`
+      + ` ｜ 深色覆写 ${Object.keys(tokens.dark).length}`
+      + (scopedOnly.length ? ` ｜ 仅条件选择器内定义 ${scopedOnly.length}（${scopedOnly.join('、')}）` : '');
+  };
+  const tableLine = () => `CSS 常量表 ${tokens.cssConstants.length} 张，其中定义 --dsw- 令牌的 ${tokens.tables.length} 张：`
+    + tokens.tables.map((t) => `${t.name}(${t.definitions})`).join('、');
 
   if (has('--scan')) {
     const dir = val('--scan') ?? '.';
     const rows = scanDir(dir, tokens);
     let bad = 0;
     console.log(`主题包：${tokens.source}`);
-    console.log(`真实令牌：浅色 ${Object.keys(tokens.light).length} 个 / 深色 ${Object.keys(tokens.dark).length} 个\n`);
+    console.log(tableLine());
+    console.log(summary() + '\n');
     for (const r of rows) {
       const mark = r.missing.length ? '❌' : '✅';
       console.log(`${mark} ${r.file}  （用到 ${r.used.length} 个令牌）`);
@@ -206,24 +285,44 @@ if (isMain) {
   }
 
   if (has('--json') || has('--out')) {
-    const json = JSON.stringify({ source: tokens.source, light: tokens.light, dark: tokens.dark }, null, 1);
+    const json = JSON.stringify({
+      source: tokens.source,
+      cssConstants: tokens.cssConstants,
+      tables: tokens.tables,
+      light: tokens.light,
+      dark: tokens.dark,
+      all: tokens.all,
+      scoped: tokens.scoped,
+    }, null, 1);
     const out = val('--out');
     if (out) { fs.writeFileSync(out, json); console.log(`✅ 已落盘 ${out}（${json.length} 字节）`); }
     else process.stdout.write(json + '\n');
     process.exit(0);
   }
 
-  const list = has('--all') ? [...new Set([...Object.keys(tokens.light), ...Object.keys(tokens.dark)])].sort() : COMMON;
+  const list = has('--all') ? tokens.all : COMMON;
   console.log(`主题包：${tokens.source}`);
-  console.log(`真实令牌：浅色 ${Object.keys(tokens.light).length} 个 / 深色 ${Object.keys(tokens.dark).length} 个（下面的值已沿 var() 链解析到具体色）\n`);
+  console.log(summary());
+  console.log('（`light`/`dark` 列是**全局生效**的值：单值 var() 链已解析到具体色，复合值如投影原样保留；\n'
+    + '  「—」= 该主题下没有全局定义）\n');
   console.log('令牌'.padEnd(48) + '浅色'.padEnd(26) + '深色');
   console.log('-'.repeat(96));
   for (const t of list) {
     if (tokens.light[t] === undefined && tokens.dark[t] === undefined) {
-      console.log(t.padEnd(48) + '—（不存在）');
+      const sc = tokens.scoped.find((s) => s.name === t);
+      console.log(t.padEnd(48) + (sc ? `—（仅条件选择器内定义：${sc.selector.slice(0, 24)}…）` : '—（不存在）'));
       continue;
     }
-    console.log(t.padEnd(48) + String(tokens.light[t] ?? '—').padEnd(26) + String(tokens.dark[t] ?? '—'));
+    const lv = tokens.light[t] === undefined ? '—' : String(tokens.light[t]);
+    const dv = tokens.dark[t] === undefined ? '—' : String(tokens.dark[t]);
+    // 长值（字体栈 / 多段投影）**分行带标签**输出：挤在两列里会让人把浅色值当成深色值抄走
+    if (lv.length > 24 || dv.length > 24) {
+      console.log(t);
+      console.log('      浅色: ' + lv);
+      console.log('      深色: ' + dv);
+      continue;
+    }
+    console.log(t.padEnd(48) + lv.padEnd(26) + dv);
   }
   if (!has('--all')) console.log('\n（--all 看全部；--scan <目录> 核对某个插件用到的令牌）');
 }

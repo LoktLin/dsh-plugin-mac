@@ -326,6 +326,7 @@ curl "http://127.0.0.1:3080/mytool/status"
 | `references/pitfalls.md` | 踩到坑 / 提交前自检。分七类：**0 装配期**（症状最先查这里）、**A 静默失效**、**B 壳起不来**、**C 改了不生效**、**D DOM 注入路线**、**E 开发流程**（桩绿真机红、自检污染…）、**F 写面板（槽位路线）** |
 | `references/ecosystem.md` | 想知道官方有哪些包、社区有哪些插件可以抄、怎么从官方仓库取证 |
 | `references/core-update.md` | DSH 本体升级后：六步契约兼容工作流（发现更新 → 跑探针 → 读官方信息 → 定级处置 → 复验+更新基线 → 跑自测）与兼容策略 |
+| `references/release-doc-review.md` | **发布前**内检 README / CHANGELOG / release notes：默认读者判定、5 条保留判据、默认删除清单（工程史/自测项数/内部路径/日期）、固定输出格式与最后自检 |
 | `references/used-apis.md` | 要看"我们依赖哪些官方 API、失效了会怎么坏、谁在用、怎么 feature-detect"时 |
 
 ## 8. DSH 本体升级了怎么办
@@ -347,3 +348,26 @@ node ~/.dsh/skills/dsh-plugin-mac/scripts/probe-contracts.mjs --scan "<你的插
 > 这部分原是独立技能 `dsh-core-update`，2026-09-12 并入本技能：它声称的触发词（"插件突然不生效/工具没注册"）
 > 与本技能 §6 的排障正面重叠，且同一批契约知识在两处各写一份、必然漂移。探针与自测脚本都在本技能 `scripts/` 下，
 > 改完探针/文档后跑 `node ~/.dsh/skills/dsh-plugin-mac/scripts/test-skill.mjs` 自检。
+
+## 9. 发布前：发布文档内检
+
+面向使用者的文档（README / CHANGELOG / release notes）在发布前过一次内检——
+**默认读者是"第一次拿到这个版本的人或 AI Agent"**，不是维护者。
+
+删：迁移史、日期、内部路径、自检项数、变异测试、复盘叙事、作者心路。
+留：安装/升级/调用/参数/默认值/返回值/错误语义、破坏性变更、平台限制、安全警告、机器可执行的硬边界。
+每处只做四种处理之一：**删除 / 压缩成一句 / 移到维护者文档 / 改成读者动作**。
+输出四段：内检结果（计数）→ 修订版全文 → 删除/压缩清单 → 待确认（最多 3 条）。
+
+机械层先跑脚本（12 条规则，退出码非 0 即有待处理项；判据与措辞见 `references/release-doc-review.md`）：
+
+```bash
+S=~/.dsh/skills/dsh-plugin-mac/scripts/review-release-doc.mjs
+node $S <文件.md>              # 分规则列候选 + 处置建议 + 汇总
+node $S <文件.md> --json       # CI 卡口
+node $S --selftest             # 规则自证（每条正例必中、负例不得命中）
+```
+
+**脚本只报候选、不改文件**（没有 `--fix`）：压缩/搬运的取舍与"有没有动作价值"的最终判断仍要人过一遍。
+
+完整判据与固定输出格式 → `references/release-doc-review.md`。

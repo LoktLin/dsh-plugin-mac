@@ -356,6 +356,117 @@ rec('T3.6', '文档记录了 `--no-scan`（避免"文档没写但实现有"）',
   /--no-scan/.test(docAll), /--no-scan/.test(docAll) ? 'core-update.md 已记录' : '❌ 文档没提 --no-scan，别的 AI 不会知道它能关',
   '文档-实现一致性');
 
+/* ==================== T4 主题令牌核对（dump-theme-tokens.mjs） ==================== */
+// 为什么单独立一组：这个脚本是「令牌名写错不会报错、只会静默走 fallback」的**唯一门禁**。
+// 它自己曾经**漏认 213 个真令牌**（8 张 CSS 常量表只解析了 1 张），于是把 `--dsw-elevation-panel`
+// 这种**正确写法**判成「不存在 → 永远走 fallback」并 exit 1 —— 谁把它当门禁，就会把
+// **正确的令牌化写法**退回**写死色值**。下面几条把这条边界**两个方向都钉住**：
+// 漏报（少认真令牌）与误报（把不存在的名字认成存在）都要红。
+// 变异测试可用：DSH_THEME_SCRIPT=<被改坏的副本> node test-skill.mjs —— T4 组必须变红。
+const THEME = process.env.DSH_THEME_SCRIPT || path.join(SKILL, 'scripts', 'dump-theme-tokens.mjs');
+const runTheme = (args) => new Promise((resolve) => {
+  execFile(process.execPath, [THEME, ...args], { timeout: 60000, windowsHide: true, maxBuffer: 1 << 24 },
+    (err, stdout, stderr) => resolve({
+      code: err && typeof err.code === 'number' ? err.code : (err ? 1 : 0),
+      out: String(stdout || ''), err: String(stderr || ''),
+    }));
+});
+const themeOf = async (args = ['--json']) => parseJsonOut((await runTheme(args)).out);
+const FIXTURE_DIR = (body) => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-fixture-'));
+  fs.writeFileSync(path.join(d, 'probe.js'), body);
+  return d;
+};
+
+// T4.1 并集对账：脚本认出的令牌集 == **独立手段**数出的真源定义点（双向差集都必须为空）
+{
+  const t = await themeOf();
+  let indep = [];
+  let why = '';
+  try {
+    indep = [...new Set([...fs.readFileSync(t.source, 'utf8').matchAll(/(--dsw-[a-z0-9-]+)\s*:/g)].map((m) => m[1]))];
+  } catch (e) { why = ' 读取失败：' + String(e && e.message).slice(0, 60); }
+  const scriptSet = new Set(t?.all ?? []);
+  const missed = indep.filter((k) => !scriptSet.has(k));
+  const extra = [...scriptSet].filter((k) => !indep.includes(k));
+  rec('T4.1', '令牌集与真源**逐条对账**：独立 grep 定义点 vs 脚本并集（漏报/多报都必须为 0）',
+    indep.length > 0 && missed.length === 0 && extra.length === 0,
+    `独立 grep=${indep.length}，脚本 all=${scriptSet.size}；漏报 ${missed.length}（${missed.slice(0, 5).join('、') || '无'}）、`
+    + `多报 ${extra.length}（${extra.slice(0, 5).join('、') || '无'}）；常量表 ${t?.cssConstants?.length} 张，其中定义了令牌的 ${t?.tables?.length} 张${why}`,
+    '对照实验：裸 grep 真源客户端产物里的 `--dsw-x:` 定义点（去重）vs 脚本 --json 的 all');
+}
+
+// T4.2 每一张定义了令牌的常量表都必须被解析到（**只**在那一张表里定义的令牌必须认得）
+//   探针全部取自"单表独有"的令牌，任何一张表漏解析，这条就红 —— 专治"只解析 design_platform 那一张"的回归。
+{
+  const t = await themeOf();
+  const probes = {
+    base_css_default: '--dsw-radius-lg',
+    corner_shape_css_default: '--dsw-corner-shape',
+    focus_css_default: '--dsw-focus-ring-width',
+    onboarding_css_default: '--dsw-alias-onboarding-accent',
+    gradient_shadow_text_css_default: '--dsw-elevation-panel',
+  };
+  const known = new Set(t?.all ?? []);
+  const tableNames = (t?.tables ?? []).map((x) => x.name);
+  const miss = Object.entries(probes).filter(([tbl, tok]) => !known.has(tok) || !tableNames.includes(tbl));
+  rec('T4.2', '5 张非 design_platform 的表的"独有令牌"都被认出（含 `body,body *` / `:root` 两种块）',
+    miss.length === 0,
+    `探针 ${Object.values(probes).join('、')} —— 缺 ${miss.length} 个（${miss.map(([a, b]) => `${a}:${b}`).join('、') || '无'}）；`
+    + `tables=${tableNames.join('、')}`,
+    '每张表一个"只在它里面定义"的令牌做探针（缺哪张表就红哪张）');
+}
+
+// T4.3 深色那一套也必须覆盖（修浅色顺手漏深色是典型回归）；且 scoped 令牌不能当成"不存在"
+{
+  const t = await themeOf();
+  const darkProbes = ['--dsw-linear-gradient-think', '--dsw-alias-onboarding-secondary-fill']; // 深色值来自 gradient/onboarding 两张表
+  const darkOk = darkProbes.every((k) => typeof t?.dark?.[k] === 'string' && t.dark[k].length > 0
+    && t.dark[k] !== t.light?.[k]);
+  const scopedOk = new Set(t?.all ?? []).has('--dsw-focus-ring-color');
+  rec('T4.3', '深色块（body[data-ds-dark-theme]）全部表都覆盖；仅条件选择器内定义的令牌也算"存在"',
+    darkOk && scopedOk,
+    `深色探针 ${darkProbes.map((k) => `${k}=${t?.dark?.[k] ? '有' : '无'}`).join('、')}；`
+    + `--dsw-focus-ring-color（只在 :focus-visible 条件下定义）在并集里=${scopedOk}`,
+    '结构断言：dark 映射来自多张表 + scoped 定义也算已知');
+}
+
+// T4.4 ★ 反向：判据是**精确令牌名** —— 不存在的名字必须报 ❌ 且 exit 1（绝不许"什么都认"）
+{
+  const d1 = FIXTURE_DIR('export const a = "var(--dsw-elevation-panel, #fff)";\n'
+    + 'export const b = "var(--dsw-not-a-real-token, #fff)";\n');
+  const r1 = await runTheme(['--scan', d1]);
+  const d2 = FIXTURE_DIR('export const a = "var(--dsw-radius-lg, 12px)";\n'
+    + 'export const b = "var(--dsw-focus-ring);"\n'); // 前缀不是令牌：真名是 --dsw-focus-ring-color/-width
+  const r2 = await runTheme(['--scan', d2]);
+  const d3 = FIXTURE_DIR('export const a = "var(--dsw-elevation-panel)";\n');
+  const r3 = await runTheme(['--scan', d3]);
+  for (const d of [d1, d2, d3]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* 不影响结论 */ } }
+  const onlyFake = r1.code === 1 && /--dsw-not-a-real-token/.test(r1.out) && !/\*\*不存在\*\*：--dsw-elevation-panel\b/.test(r1.out);
+  rec('T4.4', '反向：不存在的令牌必须 ❌ 且 exit 1；**前缀/近似名不许被认成存在**',
+    onlyFake && r2.code === 1 && /--dsw-focus-ring\b/.test(r2.out) && r3.code === 0,
+    `假令牌夹具 exit=${r1.code}（应 1，且只报它一个=${onlyFake}）；`
+    + `前缀夹具 exit=${r2.code}（应 1：「--dsw-focus-ring」是 --dsw-focus-ring-color/-width 的前缀、本身不存在）；`
+    + `真令牌夹具 exit=${r3.code}（应 0）`,
+    '故障注入（假令牌 / 前缀名 / 真令牌三种夹具）');
+}
+
+// T4.5 暴露本 bug 的那个真实用例：真实插件目录必须判全绿（exit 0）
+{
+  const plug = path.join(SKILL, '参考-源码', 'dsh-lanhu');
+  if (!fs.existsSync(plug)) {
+    rec('T4.5', '真实插件目录 --scan 必须 exit 0（**跳过：夹具目录不存在，未验证**）', true,
+      `${plug} 不存在 —— 这条**没有被验证**`, '跳过（环境限制，非通过）');
+    R[R.length - 1].unverified = true;
+  } else {
+    const r = await runTheme(['--scan', plug]);
+    rec('T4.5', '真实插件目录 --scan 必须 exit 0（当初就是它把 --dsw-elevation-panel 判红的）',
+      r.code === 0 && /全部存在/.test(r.out),
+      `exit=${r.code}；${(r.out.trim().split('\n').pop() || '').slice(0, 80)}`,
+      '真实用例回归（dsh-lanhu 面板浮层的 var(--dsw-elevation-panel, …)）');
+  }
+}
+
 /* ============================ 输出 ============================ */
 const unverified = R.filter((r) => r.unverified);
 if (AS_JSON) {

@@ -72,7 +72,12 @@ node scripts/dump-theme-tokens.mjs --scan <插件目录>
 
 ## 三、取值快照（**会漂移，别照抄**）
 
-> ⚠️ 下面的值是 **2026-09-30 / DSH `0.2.0-rc.2`** 抠出来的快照，共 **190 个令牌**（浅 190 / 深 190）。
+> ⚠️ 下面的值是 **2026-09-30 / DSH `0.2.0-rc.2`** 抠出来的快照。
+> **令牌总数：403**（2026-10-10 更正）—— 先前写的 **190 是错的**：`dump-theme-tokens.mjs` 当初只解析了
+> `design_platform_css_default` 一个 CSS 常量的两个 `body` 块，漏掉同文件其余 7 张表与 `body,body *{…}`，
+> 少算了 **213 个**（`--dsw-elevation-*` / `--dsw-shadow-lv*` / `--dsw-font-*` / `--dsw-radius-*` / `--dsw-focus-ring-*`）。
+> **投影/高度是独立命名空间**（不在 `--dsw-alias-*` 别名表里）：浮层该用 `--dsw-elevation-panel` / `-prominent` / `-soft`，
+> 阴影档位用 `--dsw-shadow-lv1/-lv2/-lv3`。
 > **它一定会过期** —— 见第四节。要数值就跑 `node scripts/dump-theme-tokens.mjs`，**不要抄本文档**。
 
 | 令牌 | 浅色 | 深色 | 用途 |
@@ -113,7 +118,7 @@ node scripts/dump-theme-tokens.mjs --scan <插件目录>
 ## 四、它会漂移（本次会话里就撞到一次）
 
 同一次会话内，`--dsw-specific-menu` 从 `#fff` / `#353638` 变成了 `#f8f9fa94` / `#30313680`，
-令牌总数从 **163 变成 178**（0.1.5-rc.2 → 0.1.7-rc.1），再到 **190**（0.1.7-rc.2 → **0.2.0-rc.2**，
+令牌总数从 **163 变成 178**（0.1.5-rc.2 → 0.1.7-rc.1），再到 **190**（该数偏小，见上文更正：实为 **403**）（0.1.7-rc.2 → **0.2.0-rc.2**，
 加 12 个）—— 原因是主题包被更新了（`client.js` 的 mtime 直接跳到当天）。
 
 **0.2.0-rc.2 上还有一处"同名不同值"**：`--dsw-specific-menu` 的透明度从 `94/80`（58%/50%）变成
