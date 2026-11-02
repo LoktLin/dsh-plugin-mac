@@ -228,11 +228,24 @@ function makeDom() {
   otherBtn.className = 'someOtherPluginEntry';
   const region = elem('div');
   region.className = 'regionArea';
-  wrapper.append(newBtn, otherBtn, region);
+  // 全局导航入口那一组：真壳里是 `nav.hHd-Xa_panelList`（类名哈希随版本变，
+  // 所以桩只保证「是 nav 且类名含 panelList」这个语义特征）。
+  // 为什么必须放进桩里：有插件就是在这块区域上做文章（折叠那一组、重排入口），
+  // 桩里没有 nav，「选择器失效」和「插件没干活」就分不清了。
+  const nav = elem('nav');
+  nav.className = 'hHd-Xa_panelList';
+  nav.setAttribute('aria-label', '面板');
+  for (const navLabel of ['插件', '自动化任务', '上下文洞察', '任务看板', '更多']) {
+    const row = elem('button');
+    row.className = 'hHd-Xa_panelRow';
+    row.textContent = navLabel;
+    nav.appendChild(row);
+  }
+  wrapper.append(newBtn, otherBtn, nav, region);
   column.appendChild(wrapper);
   doc.body.appendChild(column);
 
-  return { doc, all, refs: { column, wrapper, newBtn, otherBtn, region } };
+  return { doc, all, refs: { column, wrapper, newBtn, otherBtn, nav, region } };
 }
 
 /* ============================ 加载被测插件 ============================ */
@@ -420,6 +433,15 @@ try {
   });
 
   await check('Host: 工具已注册且形状合法', () => {
+    // 纯 UI 插件（有 client 半边）**零工具是合法形态**：它的能力全在浏览器，
+    // 硬塞一个「给我个工具」的假工具只会白占模型面。这里只拦「既没工具、也没有 client 半边」。
+    const pkgHere = JSON.parse(fs.readFileSync(path.join(pluginDir, 'package.json'), 'utf8'));
+    const hasClientHalf = Boolean(
+      (pkgHere.dsh && pkgHere.dsh.client) || (pkgHere.exports && pkgHere.exports['./client']) || pkgHere.browser,
+    );
+    if (stub.registered.tools.length === 0 && hasClientHalf) {
+      return '零工具（能力在客户端，dsh.client 已声明）—— 纯 UI 插件形态';
+    }
     assert(stub.registered.tools.length >= 2, '应至少注册 2 个工具，实际 ' + stub.registered.tools.length);
     for (const t of stub.registered.tools) {
       assert(typeof t.name === 'string' && t.name, '工具有个缺 name');
@@ -549,9 +571,16 @@ try {
       return '槽位路线 → ' + st.slots.map((s) => s.name + '#' + s.id).join(', ')
         + '；inject 等待 ' + (st.injected.length ? st.injected.join(', ') : '无') + ' 个声明';
     }
-    assert(domEntry.getAttribute('data-dsh-part') === 'sidebar-entry', '入口行缺 data-dsh-part="sidebar-entry" 语义属性');
-    assert(withAttrSuffix(client.dom, '-panel').length === 1, '面板元素没有挂到 document.body');
-    return 'DOM 路线 → 入口已插入 + 面板 1 个';
+    const part = domEntry.getAttribute('data-dsh-part');
+    assert(part, '注入物缺 data-dsh-part 语义属性（要能一眼看出你插进来的是什么东西）');
+    if (part === 'sidebar-entry') {
+      // 「侧边栏入口 + 面板」形态（脚手架产物）：入口之外必须真有一个面板挂到 body
+      assert(withAttrSuffix(client.dom, '-panel').length === 1, '面板元素没有挂到 document.body');
+      return 'DOM 路线 → 入口已插入 + 面板 1 个';
+    }
+    // 其它形态（如只注入一个控制件：折叠把手、拖拽分隔条、读数小条）——
+    // 它们本来就不该有面板，要求有反而是错的判据。
+    return 'DOM 路线 → 注入件 data-dsh-part="' + part + '"（控制件形态，无需面板）';
   });
 
   await check('Client: （仅 DOM 路线）入口落在「新会话」之后的入口块里', () => {
@@ -591,6 +620,11 @@ try {
     const remounted = st2.slots.length > 0 || client.dom.doc.querySelector('[data-dsh-plugin]') !== null;
     assert(remounted, 'cleanup 之后重挂失败（幂等性坏了）');
     if (typeof c2 === 'function') c2();
+    // ⚠️ 与第一次**同口径**：官方推荐用 ctx.effect 注册 disposer、apply 不必返回值。
+    //    原先这里只看返回值 → 用 ctx.effect 的插件（含本技能推荐的写法）第二次回收永远判红。
+    for (const e of st2.effects) {
+      if (typeof e.dispose === 'function') { try { e.dispose(); } catch { /* 单个失败不阻断 */ } }
+    }
     if (clientRoute === 'dom') assert(client.dom.doc.querySelector('[data-dsh-plugin]') === null, '第二次 cleanup 没生效');
     return clientRoute === 'dom' ? '已回收且可重挂（DOM 路线）' : '已回收且可重挂（槽位路线）';
   });

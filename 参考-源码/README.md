@@ -26,6 +26,7 @@ node scripts/scaffold.mjs dsh-mytool      # → 参考-源码/dsh-mytool/
 |---|---|---|
 | `dsh-eggy/` | [LoktLin/dsh-eggy](https://github.com/LoktLin/dsh-eggy) | A 路线（无构建、纯 DOM 注入）的完整范例 |
 | `dsh-lanhu/` | [LoktLin/dsh-lanhu](https://github.com/LoktLin/dsh-lanhu) | B 路线（槽位 + React）的真实实现 |
+| `dsh-sidebar-tidy/` | （本机插件，未单独发布） | **A 路线 + 薄 Host** 的另一种形态：不改结构、只在侧栏注入一条**分组标题栏**（折叠图标组 + 小字「极简模式」）。可看它怎么处理"React 会重建目标节点"这类自愈场景、怎么用纯 CSS 属性做极简隐藏，以及 `test/sidebar-tidy.test.mjs` 那套能 poke 的桩 DOM |
 
 它们**不会**随本仓库发布 —— 想看代码直接去上面的仓库。
 
